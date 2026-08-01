@@ -1,4 +1,4 @@
-const CACHE = 'siape-v3-3.1.3-2026-08-01';
+const CACHE = 'siape-v3-3.2.0-2026-08-01';
 const ASSETS = [
   './', './index.html', './styles.css', './app.js', './data.js',
   './manifest.json', './firebase-config.js', './pami-logo.png'

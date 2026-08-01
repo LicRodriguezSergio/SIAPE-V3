@@ -1,4 +1,4 @@
-console.info("SIAPE V3.1.3 cargado");
+console.info("SIAPE V3.2 cargado");
 
 const $=s=>document.querySelector(s), $$=s=>[...document.querySelectorAll(s)];
 const KEY="siape_profesional_v2_auditoria";
@@ -400,7 +400,7 @@ function renderAudit(){
    <div class="audit-head"><div><div class="itemtitle">${esc(i.code)} · ${esc(i.item)}</div><div class="meta">${esc(i.service)} · ${esc(i.domain)} · Niveles ${esc(i.levels)} · <span class="badge b${i.score}">${esc(i.criticality||riskLabel(i.score))} · ${i.score}</span></div></div></div>
    <div class="responses">${["SI","NO","NA","NO EVALUADO"].map(r=>`<button class="resp ${a.response===r?"sel":""}" onclick="setResp('${i.code}','${r}')">${r==="NA"?"NO APLICA":r}</button>`).join("")}</div>
    <label>Observación y evidencia</label><textarea oninput="setObs('${i.code}',this.value)" placeholder="Describa lo observado, documentos revisados, entrevistas y evidencia directa...">${esc(a.obs)}</textarea>
-   <div class="photo-tools no-print"><label class="secondary photo-button">📷 Tomar foto<input class="hide" type="file" accept="image/*" capture="environment" onchange="addEvidencePhotos('${i.code}',this.files)"></label><label class="secondary photo-button">🖼 Elegir fotos<input class="hide" type="file" accept="image/*" multiple onchange="addEvidencePhotos('${i.code}',this.files)"></label><button class="secondary" onclick="openEvidenceGallery('${i.code}')">Ver fotos <span id="photo-count-${i.code}">0</span></button></div><div id="photo-preview-${i.code}" class="photo-preview"></div>
+   ${a.response==="NO"?`<div class="photo-tools no-print"><label class="secondary photo-button">📷 Tomar foto<input class="hide" type="file" accept="image/*" capture="environment" onchange="addEvidencePhotos('${i.code}',this.files);this.value=''"></label><label class="secondary photo-button">🖼 Elegir fotos<input class="hide" type="file" accept="image/*" multiple onchange="addEvidencePhotos('${i.code}',this.files);this.value=''"></label><button class="secondary" onclick="openEvidenceGallery('${i.code}')">Evidencias <span id="photo-count-${i.code}">0</span></button></div><div id="photo-preview-${i.code}" class="photo-preview"></div>`:''}
    ${a.response==="NO"?`<div class="detail"><h4>Desvío</h4><div>${esc(tech.deviation)}</div><h4>Fundamentación técnica</h4><div>${esc(tech.why)}</div><h4>Recomendación</h4><div>${esc(tech.rec)}</div><h4>Evidencia esperada</h4><div>${esc(tech.ev)}</div><h4>Responsable</h4><div>${esc(tech.resp)}</div><h4>Plazo</h4><div>${esc(tech.plazo)}</div><h4>Marco normativo</h4><div>${esc(normText(i.service))}</div></div>`:""}
   </div>`;
  }).join("");
@@ -774,13 +774,40 @@ function renderUserDashboard(){const lib=JSON.parse(localStorage.getItem(LIBKEY)
 function openPhotoDB(){return new Promise((res,rej)=>{const r=indexedDB.open(PHOTO_DB,1);r.onupgradeneeded=()=>{const db=r.result;if(!db.objectStoreNames.contains('photos')){const s=db.createObjectStore('photos',{keyPath:'id'});s.createIndex('auditCode','auditCode')}};r.onsuccess=()=>res(r.result);r.onerror=()=>rej(r.error)})}
 function auditStorageId(){return `${state.meta.reportNumber||'SN'}_${state.meta.reportYear||'SA'}_${state.meta.prestador||'PRESTADOR'}`.replace(/[^a-z0-9_-]+/gi,'_').toLowerCase()}
 async function compressImage(file){const bmp=await createImageBitmap(file);const max=1400,scale=Math.min(1,max/Math.max(bmp.width,bmp.height)),c=document.createElement('canvas');c.width=Math.round(bmp.width*scale);c.height=Math.round(bmp.height*scale);c.getContext('2d').drawImage(bmp,0,0,c.width,c.height);return new Promise(r=>c.toBlob(r,'image/jpeg',.78))}
-async function addEvidencePhotos(code,files){if(!files?.length)return;const db=await openPhotoDB();for(const f of files){const blob=await compressImage(f);await new Promise((res,rej)=>{const tx=db.transaction('photos','readwrite');tx.objectStore('photos').put({id:crypto.randomUUID(),auditId:auditStorageId(),auditCode:`${auditStorageId()}|${code}`,code,blob,name:f.name,createdAt:new Date().toISOString()});tx.oncomplete=res;tx.onerror=()=>rej(tx.error)})}await renderPhotoPreview(code);refreshVisiblePhotoCounts()}
+async function addEvidencePhotos(code,files){
+ if(!files?.length)return;
+ const db=await openPhotoDB();
+ for(const f of files){
+  const caption=(prompt('Descripción breve de la evidencia fotográfica (opcional):','')||'').trim();
+  const blob=await compressImage(f);
+  const record={
+   id:crypto.randomUUID(),auditId:auditStorageId(),auditCode:`${auditStorageId()}|${code}`,code,blob,name:f.name,
+   caption,createdAt:new Date().toISOString(),reportId:reportId(),prestador:state.meta.prestador||'',auditor:state.meta.auditor||''
+  };
+  await new Promise((res,rej)=>{const tx=db.transaction('photos','readwrite');tx.objectStore('photos').put(record);tx.oncomplete=res;tx.onerror=()=>rej(tx.error)});
+ }
+ await renderPhotoPreview(code);refreshVisiblePhotoCounts();
+}
 async function getEvidencePhotos(code,auditId=auditStorageId()){const db=await openPhotoDB();return new Promise((res,rej)=>{const r=db.transaction('photos').objectStore('photos').index('auditCode').getAll(`${auditId}|${code}`);r.onsuccess=()=>res(r.result||[]);r.onerror=()=>rej(r.error)})}
 async function deleteEvidencePhoto(id,code){const db=await openPhotoDB();await new Promise((res,rej)=>{const tx=db.transaction('photos','readwrite');tx.objectStore('photos').delete(id);tx.oncomplete=res;tx.onerror=()=>rej(tx.error)});renderPhotoPreview(code);refreshVisiblePhotoCounts()}
-async function renderPhotoPreview(code){const el=document.getElementById('photo-preview-'+code);if(!el)return;const photos=await getEvidencePhotos(code);el.innerHTML=photos.map(p=>`<div class="photo-thumb"><img src="${URL.createObjectURL(p.blob)}"><button class="danger" onclick="deleteEvidencePhoto('${p.id}','${code}')">×</button></div>`).join('')}
+async function renderPhotoPreview(code){
+ const el=document.getElementById('photo-preview-'+code);if(!el)return;
+ const photos=await getEvidencePhotos(code);
+ el.innerHTML=photos.map(p=>`<figure class="photo-thumb"><img src="${URL.createObjectURL(p.blob)}" alt="Evidencia ${esc(code)}"><button class="danger" title="Eliminar fotografía" onclick="deleteEvidencePhoto('${p.id}','${code}')">×</button>${p.caption?`<figcaption>${esc(p.caption)}</figcaption>`:''}</figure>`).join('');
+}
 async function refreshVisiblePhotoCounts(){document.querySelectorAll('[id^="photo-count-"]').forEach(async el=>{const code=el.id.replace('photo-count-',''),ps=await getEvidencePhotos(code);el.textContent=ps.length;renderPhotoPreview(code)})}
 async function openEvidenceGallery(code){const ps=await getEvidencePhotos(code);if(!ps.length)return alert('No hay fotografías asociadas a este desvío.');renderPhotoPreview(code);document.getElementById('photo-preview-'+code)?.scrollIntoView({behavior:'smooth',block:'center'})}
-async function prepareReportWithPhotos(){renderReport();const ds=deviations();const blocks=[];for(const i of ds){const ps=await getEvidencePhotos(i.code);if(ps.length){blocks.push(`<section class="report-section photo-report"><h1>EVIDENCIA FOTOGRÁFICA · ${esc(i.code)}</h1><p><b>${esc(i.service)}:</b> ${esc(i.item)}</p><div class="report-photo-grid">${ps.map((p,n)=>`<figure><img src="${URL.createObjectURL(p.blob)}"><figcaption>Fotografía ${n+1} · ${new Date(p.createdAt).toLocaleString()}</figcaption></figure>`).join('')}</div></section>`)}}document.getElementById('reportContent').insertAdjacentHTML('beforeend',blocks.join(''));alert(blocks.length?'Informe preparado con fotografías.':'No hay fotografías cargadas en los desvíos.')}
+async function prepareReportWithPhotos(){
+ renderReport();const ds=deviations();const blocks=[];
+ for(const i of ds){
+  const ps=await getEvidencePhotos(i.code);
+  if(ps.length){
+   blocks.push(`<section class="report-section photo-report"><h1>EVIDENCIA FOTOGRÁFICA · ${esc(i.code)}</h1><p><b>${esc(i.service)}:</b> ${esc(i.item)}</p><div class="report-photo-grid">${ps.map((p,n)=>`<figure><img src="${URL.createObjectURL(p.blob)}"><figcaption><b>Fotografía ${n+1}</b>${p.caption?` · ${esc(p.caption)}`:''}<br>${new Date(p.createdAt).toLocaleString()} · Auditor: ${esc(p.auditor||state.meta.auditor||'No consignado')} · Prestador: ${esc(p.prestador||state.meta.prestador||'No consignado')}</figcaption></figure>`).join('')}</div></section>`);
+  }
+ }
+ document.getElementById('reportContent').insertAdjacentHTML('beforeend',blocks.join(''));
+ alert(blocks.length?'Informe preparado con fotografías.':'No hay fotografías cargadas en los desvíos.');
+}
 
 function auditShareText(){return `SIAPE · Informe ${reportId()}\nPrestador: ${state.meta.prestador||'Sin identificar'}\nFecha: ${state.meta.date||''}\nAuditor: ${state.meta.auditor||''}\nDesvíos: ${stats().dev}\nRiesgo: ${riskOverall()}`}
 function downloadCurrentHTML(){renderReport();const blob=new Blob([`<!doctype html><meta charset="utf-8"><title>SIAPE ${reportId()}</title><link rel="stylesheet" href="styles.css">${document.getElementById('reportContent').innerHTML}`],{type:'text/html'});const a=document.createElement('a');a.href=URL.createObjectURL(blob);a.download=`SIAPE_${reportId().replace('/','_')}.html`;a.click();return blob}
