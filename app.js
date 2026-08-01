@@ -1,3 +1,4 @@
+console.info("SIAPE V3.1.3 cargado");
 
 const $=s=>document.querySelector(s), $$=s=>[...document.querySelectorAll(s)];
 const KEY="siape_profesional_v2_auditoria";
