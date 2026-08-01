@@ -1,10 +1,10 @@
-// Complete estos datos desde Firebase Console > Configuración del proyecto > Sus aplicaciones > Web.
-// No coloque contraseñas aquí. La apiKey de Firebase identifica el proyecto; la seguridad real depende de Authentication y Firestore Rules.
+// Configuración pública de la aplicación web SIAPE V3 en Firebase.
+// No contiene contraseñas. Firebase Authentication valida cada cuenta.
 window.SIAPE_FIREBASE_CONFIG = {
-  apiKey: "",
-  authDomain: "",
-  projectId: "",
-  storageBucket: "",
-  messagingSenderId: "",
-  appId: ""
+  apiKey: "AIzaSyBjDEnzy0w_XA-Gg5KPeZekOJYuUKj12GY",
+  authDomain: "siape-v3.firebaseapp.com",
+  projectId: "siape-v3",
+  storageBucket: "siape-v3.firebasestorage.app",
+  messagingSenderId: "1000651261542",
+  appId: "1:1000651261542:web:5e5900bdb8b9f954780fa7"
 };

@@ -712,16 +712,28 @@ function initV3Auth(){
  document.getElementById('authConfigured')?.classList.toggle('hide',!enabled);
  document.getElementById('authSetup')?.classList.toggle('hide',enabled);
  document.getElementById('localDemo')?.classList.toggle('hide',!isLocalPreview());
+ setTimeout(()=>document.getElementById('introSplash')?.classList.add('intro-hidden'),700);
  if(!enabled)return;
- try{firebase.initializeApp(cfg);siapeAuth=firebase.auth();siapeDb=firebase.firestore();siapeAuth.onAuthStateChanged(async user=>{if(user){currentSessionUser=user;await validateAuthorizedUser(user)}else lockApplication()})}catch(e){document.getElementById('loginStatus').textContent='Error de configuración: '+e.message}
+ try{
+  firebase.initializeApp(cfg);
+  siapeAuth=firebase.auth();
+  try{siapeDb=firebase.firestore()}catch(_){siapeDb=null}
+  siapeAuth.setPersistence(firebase.auth.Auth.Persistence.LOCAL).catch(()=>{});
+  siapeAuth.onAuthStateChanged(async user=>{if(user){currentSessionUser=user;await validateAuthorizedUser(user)}else lockApplication()});
+ }catch(e){document.getElementById('loginStatus').textContent='Error de configuración: '+e.message}
 }
 async function validateAuthorizedUser(user){
- try{const doc=await siapeDb.collection('users').doc(user.uid).get();const data=doc.exists?doc.data():null;if(!data||data.active!==true){await siapeAuth.signOut();throw new Error('Usuario no autorizado o desactivado.')}currentSessionUser={...user,role:data.role||'auditor',displayName:data.name||user.email};unlockApplication();await logAccess('login_ok');}catch(e){document.getElementById('loginStatus').textContent=e.message;lockApplication()}
+ // Todo usuario creado y habilitado en Firebase Authentication puede ingresar.
+ // El correo del autor se presenta como Administrador; los demás ingresan como Auditor.
+ const isAdmin=(user.email||'').toLowerCase()==='sgrodriguez@pami.org.ar';
+ currentSessionUser={uid:user.uid,email:user.email||'',displayName:user.displayName||user.email,role:isAdmin?'administrador':'auditor'};
+ unlockApplication();
+ await logAccess('login_ok');
 }
 async function logAccess(event){try{if(siapeDb&&currentSessionUser?.uid)await siapeDb.collection('accessLogs').add({uid:currentSessionUser.uid,email:currentSessionUser.email||'',event,createdAt:firebase.firestore.FieldValue.serverTimestamp(),userAgent:navigator.userAgent})}catch(e){console.warn('No se pudo registrar acceso',e)}}
-function lockApplication(){document.getElementById('authGate')?.classList.remove('hide');document.body.classList.add('locked')}
-function unlockApplication(){document.getElementById('authGate')?.classList.add('hide');document.body.classList.remove('locked');const el=document.getElementById('sessionUser');if(el)el.textContent=`${currentSessionUser.displayName||currentSessionUser.email} · ${currentSessionUser.role||'auditor'}`;applyProfileToAudit();renderUserDashboard()}
-async function siapeLogin(){const email=document.getElementById('loginEmail').value.trim(),password=document.getElementById('loginPassword').value,status=document.getElementById('loginStatus');status.textContent='Verificando…';try{await siapeAuth.signInWithEmailAndPassword(email,password)}catch(e){status.textContent='No se pudo ingresar. Verifique usuario y contraseña.'}}
+function lockApplication(){const gate=document.getElementById('authGate');gate?.classList.remove('hide','auth-leaving');document.body.classList.add('locked')}
+function unlockApplication(){const gate=document.getElementById('authGate');gate?.classList.add('auth-leaving');setTimeout(()=>gate?.classList.add('hide'),520);document.body.classList.remove('locked');const el=document.getElementById('sessionUser');if(el)el.textContent=`${currentSessionUser.displayName||currentSessionUser.email} · ${currentSessionUser.role||'auditor'}`;applyProfileToAudit();renderUserDashboard()}
+async function siapeLogin(){const email=document.getElementById('loginEmail').value.trim(),password=document.getElementById('loginPassword').value,status=document.getElementById('loginStatus');if(!email||!password){status.textContent='Ingrese el correo y la contraseña.';return}status.textContent='Verificando acceso…';try{await siapeAuth.signInWithEmailAndPassword(email,password)}catch(e){status.textContent='No se pudo ingresar. Verifique el correo y la contraseña.'}}
 async function siapeResetPassword(){const email=document.getElementById('loginEmail').value.trim();if(!email)return alert('Ingrese primero su correo.');try{await siapeAuth.sendPasswordResetEmail(email);alert('Se envió el correo para restablecer la contraseña.')}catch(e){alert('No se pudo enviar el correo: '+e.message)}}
 async function siapeLogout(){await logAccess('logout');if(siapeAuth)await siapeAuth.signOut();else{currentSessionUser=null;lockApplication()}}
 function enterLocalDemo(){currentSessionUser={uid:'local-demo',email:'local@device',displayName:'Auditor de prueba',role:'administrador'};unlockApplication()}
