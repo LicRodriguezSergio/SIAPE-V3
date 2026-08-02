@@ -1,13 +1,67 @@
 rules_version = '2';
+
 service cloud.firestore {
   match /databases/{database}/documents {
-    match /users/{uid} {
-      allow read: if request.auth != null && request.auth.uid == uid;
-      allow write: if false; // administrar desde Firebase Console o backend seguro
+
+    function signedIn() {
+      return request.auth != null && request.auth.token.email != null;
     }
-    match /accessLogs/{logId} {
-      allow create: if request.auth != null && request.resource.data.uid == request.auth.uid;
-      allow read, update, delete: if false;
+
+    function currentEmail() {
+      return request.auth.token.email;
+    }
+
+    function isOwnUserDocument(email) {
+      return signedIn() && currentEmail() == email;
+    }
+
+    function currentUserDocument() {
+      return get(/databases/$(database)/documents/usuarios/$(currentEmail()));
+    }
+
+    function isManagementRole() {
+      return signedIn()
+        && currentUserDocument().data.estado == 'autorizado'
+        && currentUserDocument().data.rol in [
+          'administrador',
+          'gerente',
+          'subgerente',
+          'jefa_medicas',
+          'jefa_sociales'
+        ];
+    }
+
+    function isPrimaryAdmin() {
+      return signedIn()
+        && currentEmail() == 'sgrodriguez@pami.org.ar'
+        && currentUserDocument().data.estado == 'autorizado'
+        && currentUserDocument().data.rol == 'administrador';
+    }
+
+    match /usuarios/{email} {
+      allow get: if isOwnUserDocument(email) || isManagementRole();
+      allow list: if isManagementRole();
+
+      allow create: if isOwnUserDocument(email)
+        && request.resource.data.keys().hasOnly([
+          'nombre', 'apellido', 'correo', 'estado', 'rol'
+        ])
+        && request.resource.data.nombre is string
+        && request.resource.data.apellido is string
+        && request.resource.data.correo == currentEmail()
+        && request.resource.data.estado == 'pendiente'
+        && request.resource.data.rol == 'auditor';
+
+      allow update: if isPrimaryAdmin()
+        || (isManagementRole()
+          && request.resource.data.diff(resource.data).affectedKeys().hasOnly(['estado'])
+          && request.resource.data.estado in ['pendiente','autorizado','suspendido','rechazado']);
+
+      allow delete: if isManagementRole();
+    }
+
+    match /{document=**} {
+      allow read, write: if false;
     }
   }
 }

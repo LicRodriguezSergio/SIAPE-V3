@@ -1,4 +1,3 @@
-console.info("SIAPE V3.2 cargado");
 
 const $=s=>document.querySelector(s), $$=s=>[...document.querySelectorAll(s)];
 const KEY="siape_profesional_v2_auditoria";
@@ -400,7 +399,7 @@ function renderAudit(){
    <div class="audit-head"><div><div class="itemtitle">${esc(i.code)} · ${esc(i.item)}</div><div class="meta">${esc(i.service)} · ${esc(i.domain)} · Niveles ${esc(i.levels)} · <span class="badge b${i.score}">${esc(i.criticality||riskLabel(i.score))} · ${i.score}</span></div></div></div>
    <div class="responses">${["SI","NO","NA","NO EVALUADO"].map(r=>`<button class="resp ${a.response===r?"sel":""}" onclick="setResp('${i.code}','${r}')">${r==="NA"?"NO APLICA":r}</button>`).join("")}</div>
    <label>Observación y evidencia</label><textarea oninput="setObs('${i.code}',this.value)" placeholder="Describa lo observado, documentos revisados, entrevistas y evidencia directa...">${esc(a.obs)}</textarea>
-   ${a.response==="NO"?`<div class="photo-tools no-print"><label class="secondary photo-button">📷 Tomar foto<input class="hide" type="file" accept="image/*" capture="environment" onchange="addEvidencePhotos('${i.code}',this.files);this.value=''"></label><label class="secondary photo-button">🖼 Elegir fotos<input class="hide" type="file" accept="image/*" multiple onchange="addEvidencePhotos('${i.code}',this.files);this.value=''"></label><button class="secondary" onclick="openEvidenceGallery('${i.code}')">Evidencias <span id="photo-count-${i.code}">0</span></button></div><div id="photo-preview-${i.code}" class="photo-preview"></div>`:''}
+   <div class="photo-tools no-print"><label class="secondary photo-button">📷 Tomar foto<input class="hide" type="file" accept="image/*" capture="environment" onchange="addEvidencePhotos('${i.code}',this.files)"></label><label class="secondary photo-button">🖼 Elegir fotos<input class="hide" type="file" accept="image/*" multiple onchange="addEvidencePhotos('${i.code}',this.files)"></label><button class="secondary" onclick="openEvidenceGallery('${i.code}')">Ver fotos <span id="photo-count-${i.code}">0</span></button></div><div id="photo-preview-${i.code}" class="photo-preview"></div>
    ${a.response==="NO"?`<div class="detail"><h4>Desvío</h4><div>${esc(tech.deviation)}</div><h4>Fundamentación técnica</h4><div>${esc(tech.why)}</div><h4>Recomendación</h4><div>${esc(tech.rec)}</div><h4>Evidencia esperada</h4><div>${esc(tech.ev)}</div><h4>Responsable</h4><div>${esc(tech.resp)}</div><h4>Plazo</h4><div>${esc(tech.plazo)}</div><h4>Marco normativo</h4><div>${esc(normText(i.service))}</div></div>`:""}
   </div>`;
  }).join("");
@@ -703,68 +702,172 @@ window.addEventListener('online',updateAIConnection);window.addEventListener('of
 document.addEventListener('DOMContentLoaded',initAI);
 
 
-// ===== SIAPE V3: autenticación, perfiles, evidencias y compartición =====
+// ===== SIAPE V3.1.4: autenticación y autorización con Firestore =====
 const V3_PROFILE_KEY='siape_v3_profile';
 const PHOTO_DB='siape_v3_evidence';
-let siapeAuth=null, siapeDb=null, currentSessionUser=null;
+const LOCAL_AUTH_PREFIX='siape_authorized_';
+const MANAGEMENT_ROLES=['administrador','gerente','subgerente','jefa_medicas','jefa_sociales'];
+const PRIMARY_ADMIN_EMAIL='sgrodriguez@pami.org.ar';
+let siapeAuth=null,siapeDb=null,currentSessionUser=null,registeringAccess=false,adminUsersCache=[];
 function isLocalPreview(){return location.protocol==='file:'||['localhost','127.0.0.1'].includes(location.hostname)}
+function normalizeEmail(v){return String(v||'').trim().toLowerCase()}
+function isManagementRole(role){return MANAGEMENT_ROLES.includes(role)}
+function showLoginCard(){
+ const intro=document.getElementById('loginIntro'),card=document.getElementById('authCard');
+ setTimeout(()=>{intro?.classList.add('login-intro-out');card?.classList.remove('auth-card-hidden')},650);
+}
 function initV3Auth(){
  const cfg=window.SIAPE_FIREBASE_CONFIG||{};const enabled=!!cfg.apiKey;
  document.getElementById('authConfigured')?.classList.toggle('hide',!enabled);
  document.getElementById('authSetup')?.classList.toggle('hide',enabled);
  document.getElementById('localDemo')?.classList.toggle('hide',!isLocalPreview());
- setTimeout(()=>document.getElementById('introSplash')?.classList.add('intro-hidden'),700);
+ showLoginCard();
  if(!enabled)return;
  try{
-  firebase.initializeApp(cfg);
+  if(!firebase.apps.length)firebase.initializeApp(cfg);
   siapeAuth=firebase.auth();
-  try{siapeDb=firebase.firestore()}catch(_){siapeDb=null}
+  siapeDb=firebase.firestore();
   siapeAuth.setPersistence(firebase.auth.Auth.Persistence.LOCAL).catch(()=>{});
-  siapeAuth.onAuthStateChanged(async user=>{if(user){currentSessionUser=user;await validateAuthorizedUser(user)}else lockApplication()});
- }catch(e){document.getElementById('loginStatus').textContent='Error de configuración: '+e.message}
+  siapeAuth.onAuthStateChanged(async user=>{
+   if(registeringAccess)return;
+   if(user){await validateAuthorizedUser(user)}else lockApplication();
+  });
+ }catch(e){setLoginStatus('Error de configuración: '+friendlyAuthError(e))}
 }
+function setLoginStatus(message,kind='error'){
+ const st=document.getElementById('loginStatus');if(!st)return;
+ st.textContent=message||'';st.dataset.kind=kind;
+}
+function localAuthorization(email){
+ try{return JSON.parse(localStorage.getItem(LOCAL_AUTH_PREFIX+normalizeEmail(email))||'null')}catch{return null}
+}
+function saveLocalAuthorization(profile){
+ localStorage.setItem(LOCAL_AUTH_PREFIX+normalizeEmail(profile.correo),JSON.stringify({correo:normalizeEmail(profile.correo),nombre:profile.nombre||'',apellido:profile.apellido||'',rol:profile.rol||'auditor',estado:'autorizado',validatedAt:new Date().toISOString()}));
+}
+function clearLocalAuthorization(email){localStorage.removeItem(LOCAL_AUTH_PREFIX+normalizeEmail(email))}
 async function validateAuthorizedUser(user){
- // Todo usuario creado y habilitado en Firebase Authentication puede ingresar.
- // El correo del autor se presenta como Administrador; los demás ingresan como Auditor.
- const isAdmin=(user.email||'').toLowerCase()==='sgrodriguez@pami.org.ar';
- currentSessionUser={uid:user.uid,email:user.email||'',displayName:user.displayName||user.email,role:isAdmin?'administrador':'auditor'};
- unlockApplication();
- await logAccess('login_ok');
-}
-async function logAccess(event){try{if(siapeDb&&currentSessionUser?.uid)await siapeDb.collection('accessLogs').add({uid:currentSessionUser.uid,email:currentSessionUser.email||'',event,createdAt:firebase.firestore.FieldValue.serverTimestamp(),userAgent:navigator.userAgent})}catch(e){console.warn('No se pudo registrar acceso',e)}}
-function lockApplication(){const gate=document.getElementById('authGate');gate?.classList.remove('hide','auth-leaving');document.body.classList.add('locked')}
-function unlockApplication(){const gate=document.getElementById('authGate');gate?.classList.add('auth-leaving');setTimeout(()=>gate?.classList.add('hide'),520);document.body.classList.remove('locked');const el=document.getElementById('sessionUser');if(el)el.textContent=`${currentSessionUser.displayName||currentSessionUser.email} · ${currentSessionUser.role||'auditor'}`;applyProfileToAudit();renderUserDashboard()}
-async function siapeLogin(){
- const email=document.getElementById('loginEmail').value.trim(),password=document.getElementById('loginPassword').value,status=document.getElementById('loginStatus');
- if(!email||!password){status.textContent='Ingrese el correo y la contraseña.';return}
- if(!siapeAuth){status.textContent='Firebase todavía no está inicializado. Recargue la página.';return}
- status.textContent='Verificando acceso…';
- try{await siapeAuth.signInWithEmailAndPassword(email,password)}catch(e){
-  console.error('Error de acceso Firebase:',e);
-  const code=e?.code||'';
-  const messages={
-   'auth/invalid-api-key':'La clave de Firebase no es válida.',
-   'auth/api-key-not-valid.-please-pass-a-valid-api-key.':'La clave de Firebase no es válida.',
-   'auth/invalid-credential':'El correo o la contraseña no coinciden.',
-   'auth/user-not-found':'El usuario no está registrado.',
-   'auth/wrong-password':'La contraseña no coincide.',
-   'auth/invalid-email':'El correo electrónico no es válido.',
-   'auth/user-disabled':'El usuario está deshabilitado.',
-   'auth/too-many-requests':'Demasiados intentos. Espere unos minutos.',
-   'auth/network-request-failed':'No se pudo conectar con Firebase. Revise Internet.',
-   'auth/unauthorized-domain':'Este dominio todavía no está autorizado en Firebase.'
-  };
-  status.textContent=messages[code]||`No se pudo ingresar (${code||e.message}).`;
+ const email=normalizeEmail(user.email);
+ setLoginStatus('Verificando autorización…','info');
+ try{
+  const snap=await siapeDb.collection('usuarios').doc(email).get();
+  if(!snap.exists){
+   clearLocalAuthorization(email);
+   setLoginStatus('Este usuario todavía no tiene una solicitud de acceso. Use “Solicitar acceso”.');
+   await siapeAuth.signOut();return;
+  }
+  const profile=snap.data()||{},estado=String(profile.estado||'').toLowerCase(),rol=String(profile.rol||'auditor').toLowerCase();
+  if(estado!=='autorizado'){
+   clearLocalAuthorization(email);
+   const messages={pendiente:'Su solicitud está pendiente de autorización.',suspendido:'Su acceso fue suspendido.',rechazado:'Su solicitud fue rechazada.'};
+   setLoginStatus(messages[estado]||'Su cuenta no está autorizada.');
+   await siapeAuth.signOut();return;
+  }
+  currentSessionUser={uid:user.uid,email:user.email||email,displayName:`${profile.nombre||''} ${profile.apellido||''}`.trim()||user.email,role:rol,profile};
+  saveLocalAuthorization({...profile,correo:email,rol});
+  setLoginStatus('');unlockApplication();
+ }catch(e){
+  const cached=localAuthorization(email);
+  if((!navigator.onLine||e?.code==='unavailable')&&cached?.estado==='autorizado'){
+   currentSessionUser={uid:user.uid,email,displayName:`${cached.nombre||''} ${cached.apellido||''}`.trim()||email,role:cached.rol||'auditor',profile:cached};
+   setLoginStatus('Ingreso sin conexión con autorización guardada.','info');unlockApplication();return;
+  }
+  setLoginStatus('No se pudo verificar la autorización: '+friendlyAuthError(e));
+  try{await siapeAuth.signOut()}catch{}
  }
 }
-async function siapeResetPassword(){
- const email=document.getElementById('loginEmail').value.trim();
- if(!email)return alert('Ingrese primero su correo.');
- if(!siapeAuth)return alert('Firebase todavía no está inicializado. Recargue la página.');
- try{await siapeAuth.sendPasswordResetEmail(email);alert('Se envió el correo para restablecer la contraseña.')}catch(e){console.error('Error al restablecer contraseña:',e);alert(`No se pudo enviar el correo (${e?.code||e.message}).`)}
+function friendlyAuthError(e){
+ const c=e?.code||'';
+ if(c.includes('invalid-api-key'))return 'La clave de Firebase no es válida.';
+ if(c.includes('email-already-in-use'))return 'Ese correo ya tiene una cuenta. Use Ingresar o restablezca la contraseña.';
+ if(c.includes('weak-password'))return 'La contraseña debe tener al menos 6 caracteres.';
+ if(c.includes('invalid-email'))return 'El correo electrónico no es válido.';
+ if(c.includes('invalid-credential')||c.includes('wrong-password')||c.includes('user-not-found'))return 'Correo o contraseña incorrectos.';
+ if(c.includes('permission-denied'))return 'Firestore rechazó la operación. Revise las reglas publicadas.';
+ if(c.includes('too-many-requests'))return 'Demasiados intentos. Espere unos minutos.';
+ if(c.includes('network-request-failed')||c.includes('unavailable'))return 'No se pudo conectar a Internet.';
+ if(c.includes('unauthorized-domain'))return 'Este dominio todavía no está autorizado en Firebase.';
+ return e?.message||'No se pudo completar la operación.';
 }
-async function siapeLogout(){await logAccess('logout');if(siapeAuth)await siapeAuth.signOut();else{currentSessionUser=null;lockApplication()}}
+function lockApplication(){
+ document.getElementById('authGate')?.classList.remove('hide','auth-success');document.body.classList.add('locked');
+ document.getElementById('adminNav')?.classList.add('hide');
+}
+function unlockApplication(){
+ const gate=document.getElementById('authGate');gate?.classList.add('auth-success');
+ setTimeout(()=>gate?.classList.add('hide'),500);document.body.classList.remove('locked');
+ const el=document.getElementById('sessionUser');if(el)el.textContent=`${currentSessionUser.displayName||currentSessionUser.email} · ${currentSessionUser.role||'auditor'}`;
+ document.getElementById('adminNav')?.classList.toggle('hide',!isManagementRole(currentSessionUser?.role));
+ applyProfileToAudit();renderUserDashboard();
+}
+async function siapeLogin(){
+ const email=normalizeEmail(document.getElementById('loginEmail').value),password=document.getElementById('loginPassword').value;
+ if(!email||!password){setLoginStatus('Ingrese el correo y la contraseña.');return}
+ setLoginStatus('Verificando…','info');
+ try{await siapeAuth.signInWithEmailAndPassword(email,password)}catch(e){setLoginStatus(friendlyAuthError(e))}
+}
+async function siapeResetPassword(){
+ const email=normalizeEmail(document.getElementById('loginEmail').value);if(!email)return alert('Ingrese primero su correo.');
+ try{await siapeAuth.sendPasswordResetEmail(email);alert('Se envió el correo para restablecer la contraseña.')}catch(e){alert('No se pudo enviar el correo: '+friendlyAuthError(e))}
+}
+async function siapeLogout(){if(siapeAuth)await siapeAuth.signOut();currentSessionUser=null;lockApplication()}
 function enterLocalDemo(){currentSessionUser={uid:'local-demo',email:'local@device',displayName:'Auditor de prueba',role:'administrador'};unlockApplication()}
+function toggleAccessRequest(force){
+ const box=document.getElementById('accessRequestBox');if(!box)return;
+ const show=typeof force==='boolean'?force:box.classList.contains('hide');box.classList.toggle('hide',!show);
+ if(show){const loginEmail=normalizeEmail(document.getElementById('loginEmail')?.value);if(loginEmail)document.getElementById('requestEmail').value=loginEmail;document.getElementById('requestFirstName')?.focus()}
+}
+async function submitAccessRequest(){
+ const nombre=document.getElementById('requestFirstName').value.trim(),apellido=document.getElementById('requestLastName').value.trim(),correo=normalizeEmail(document.getElementById('requestEmail').value),password=document.getElementById('requestPassword').value,password2=document.getElementById('requestPassword2').value;
+ if(!nombre||!apellido||!correo||!password){setLoginStatus('Complete todos los datos de la solicitud.');return}
+ if(password!==password2){setLoginStatus('Las contraseñas no coinciden.');return}
+ if(password.length<6){setLoginStatus('La contraseña debe tener al menos 6 caracteres.');return}
+ registeringAccess=true;setLoginStatus('Enviando solicitud…','info');
+ try{
+  const cred=await siapeAuth.createUserWithEmailAndPassword(correo,password);
+  await siapeDb.collection('usuarios').doc(correo).set({nombre,apellido,correo,estado:'pendiente',rol:'auditor'});
+  await cred.user.updateProfile({displayName:`${nombre} ${apellido}`}).catch(()=>{});
+  await siapeAuth.signOut();
+  document.getElementById('loginEmail').value=correo;document.getElementById('loginPassword').value='';
+  toggleAccessRequest(false);setLoginStatus('Solicitud enviada. Espere la autorización de un responsable.','success');
+ }catch(e){setLoginStatus(friendlyAuthError(e))}
+ finally{registeringAccess=false}
+}
+async function loadAdminUsers(){
+ if(!isManagementRole(currentSessionUser?.role))return;
+ const status=document.getElementById('adminUserStatus');if(status)status.textContent='Cargando usuarios…';
+ try{
+  const snap=await siapeDb.collection('usuarios').get();adminUsersCache=snap.docs.map(d=>({id:d.id,...d.data()}));
+  renderAdminUsers();if(status)status.textContent=`${adminUsersCache.length} usuario(s).`;
+ }catch(e){if(status)status.textContent='No se pudieron cargar los usuarios: '+friendlyAuthError(e)}
+}
+function renderAdminUsers(){
+ const el=document.getElementById('adminUsersList');if(!el)return;
+ const q=normalizeEmail(document.getElementById('adminUserSearch')?.value),filter=document.getElementById('adminUserFilter')?.value||'todos';
+ const list=adminUsersCache.filter(u=>{const text=`${u.nombre||''} ${u.apellido||''} ${u.correo||u.id}`.toLowerCase();return(!q||text.includes(q))&&(filter==='todos'||u.estado===filter)}).sort((a,b)=>String(a.apellido||a.correo).localeCompare(String(b.apellido||b.correo),'es'));
+ if(!list.length){el.innerHTML='<div class="notice">No hay usuarios para mostrar.</div>';return}
+ el.innerHTML=list.map(u=>{
+  const email=normalizeEmail(u.correo||u.id),self=email===normalizeEmail(currentSessionUser?.email),primary=normalizeEmail(currentSessionUser?.email)===PRIMARY_ADMIN_EMAIL;
+  const roleOptions=['auditor','gerente','subgerente','jefa_medicas','jefa_sociales','administrador'].map(r=>`<option value="${r}" ${u.rol===r?'selected':''}>${roleLabel(r)}</option>`).join('');
+  return `<div class="admin-user-card"><div class="admin-user-head"><div><div class="admin-user-name">${esc(`${u.nombre||''} ${u.apellido||''}`.trim()||email)}</div><div class="admin-user-meta">${esc(email)}<br>Rol: ${esc(roleLabel(u.rol||'auditor'))}</div></div><span class="user-state user-state-${esc(u.estado||'pendiente')}">${esc(u.estado||'pendiente')}</span></div><div class="admin-user-actions">${u.estado!=='autorizado'?`<button class="primary" onclick="setUserStatus('${esc(email)}','autorizado')">Autorizar</button>`:''}${u.estado!=='rechazado'?`<button class="secondary" onclick="setUserStatus('${esc(email)}','rechazado')">Rechazar</button>`:''}${u.estado==='autorizado'&&!self?`<button class="danger" onclick="setUserStatus('${esc(email)}','suspendido')">Suspender</button>`:''}${u.estado==='suspendido'?`<button class="primary" onclick="setUserStatus('${esc(email)}','autorizado')">Reactivar</button>`:''}${!self?`<button class="danger" onclick="deleteUserRecord('${esc(email)}')">Eliminar registro</button>`:''}</div>${primary?`<div class="role-editor"><label>Rol</label><select id="role-${safeDomId(email)}">${roleOptions}</select><button class="secondary" onclick="setUserRole('${esc(email)}')">Guardar rol</button></div>`:''}</div>`;
+ }).join('');
+}
+function roleLabel(role){return({administrador:'Administrador',gerente:'Gerente',subgerente:'Subgerente',jefa_medicas:'Jefa Departamento Médicas',jefa_sociales:'Jefa Departamento Sociales',auditor:'Auditor'})[role]||role}
+function safeDomId(v){return String(v).replace(/[^a-z0-9_-]/gi,'_')}
+async function setUserStatus(email,estado){
+ if(!isManagementRole(currentSessionUser?.role))return;
+ if(!confirm(`¿Confirmar estado “${estado}” para ${email}?`))return;
+ try{await siapeDb.collection('usuarios').doc(email).update({estado});await loadAdminUsers()}catch(e){alert(friendlyAuthError(e))}
+}
+async function setUserRole(email){
+ if(normalizeEmail(currentSessionUser?.email)!==PRIMARY_ADMIN_EMAIL)return alert('Solo el Administrador Principal puede cambiar roles.');
+ const role=document.getElementById('role-'+safeDomId(email))?.value;if(!role)return;
+ try{await siapeDb.collection('usuarios').doc(email).update({rol:role});await loadAdminUsers()}catch(e){alert(friendlyAuthError(e))}
+}
+async function deleteUserRecord(email){
+ if(!isManagementRole(currentSessionUser?.role))return;
+ if(!confirm(`¿Eliminar el registro de ${email}?\n\nLa cuenta de Authentication deberá eliminarse aparte desde Firebase.`))return;
+ try{await siapeDb.collection('usuarios').doc(email).delete();clearLocalAuthorization(email);await loadAdminUsers()}catch(e){alert(friendlyAuthError(e))}
+}
 
 function renderV3Settings(){const p=JSON.parse(localStorage.getItem(V3_PROFILE_KEY)||'{}');['Name','License','Institution','Email'].forEach(k=>{const e=document.getElementById('profile'+k);if(e)e.value=p[k.toLowerCase()]||''})}
 function saveV3Settings(){const p={name:profileName.value.trim(),license:profileLicense.value.trim(),institution:profileInstitution.value.trim(),email:profileEmail.value.trim()};localStorage.setItem(V3_PROFILE_KEY,JSON.stringify(p));applyProfileToAudit();alert('Configuración guardada en este dispositivo.')}
@@ -774,40 +877,13 @@ function renderUserDashboard(){const lib=JSON.parse(localStorage.getItem(LIBKEY)
 function openPhotoDB(){return new Promise((res,rej)=>{const r=indexedDB.open(PHOTO_DB,1);r.onupgradeneeded=()=>{const db=r.result;if(!db.objectStoreNames.contains('photos')){const s=db.createObjectStore('photos',{keyPath:'id'});s.createIndex('auditCode','auditCode')}};r.onsuccess=()=>res(r.result);r.onerror=()=>rej(r.error)})}
 function auditStorageId(){return `${state.meta.reportNumber||'SN'}_${state.meta.reportYear||'SA'}_${state.meta.prestador||'PRESTADOR'}`.replace(/[^a-z0-9_-]+/gi,'_').toLowerCase()}
 async function compressImage(file){const bmp=await createImageBitmap(file);const max=1400,scale=Math.min(1,max/Math.max(bmp.width,bmp.height)),c=document.createElement('canvas');c.width=Math.round(bmp.width*scale);c.height=Math.round(bmp.height*scale);c.getContext('2d').drawImage(bmp,0,0,c.width,c.height);return new Promise(r=>c.toBlob(r,'image/jpeg',.78))}
-async function addEvidencePhotos(code,files){
- if(!files?.length)return;
- const db=await openPhotoDB();
- for(const f of files){
-  const caption=(prompt('Descripción breve de la evidencia fotográfica (opcional):','')||'').trim();
-  const blob=await compressImage(f);
-  const record={
-   id:crypto.randomUUID(),auditId:auditStorageId(),auditCode:`${auditStorageId()}|${code}`,code,blob,name:f.name,
-   caption,createdAt:new Date().toISOString(),reportId:reportId(),prestador:state.meta.prestador||'',auditor:state.meta.auditor||''
-  };
-  await new Promise((res,rej)=>{const tx=db.transaction('photos','readwrite');tx.objectStore('photos').put(record);tx.oncomplete=res;tx.onerror=()=>rej(tx.error)});
- }
- await renderPhotoPreview(code);refreshVisiblePhotoCounts();
-}
+async function addEvidencePhotos(code,files){if(!files?.length)return;const db=await openPhotoDB();for(const f of files){const blob=await compressImage(f);await new Promise((res,rej)=>{const tx=db.transaction('photos','readwrite');tx.objectStore('photos').put({id:crypto.randomUUID(),auditId:auditStorageId(),auditCode:`${auditStorageId()}|${code}`,code,blob,name:f.name,createdAt:new Date().toISOString()});tx.oncomplete=res;tx.onerror=()=>rej(tx.error)})}await renderPhotoPreview(code);refreshVisiblePhotoCounts()}
 async function getEvidencePhotos(code,auditId=auditStorageId()){const db=await openPhotoDB();return new Promise((res,rej)=>{const r=db.transaction('photos').objectStore('photos').index('auditCode').getAll(`${auditId}|${code}`);r.onsuccess=()=>res(r.result||[]);r.onerror=()=>rej(r.error)})}
 async function deleteEvidencePhoto(id,code){const db=await openPhotoDB();await new Promise((res,rej)=>{const tx=db.transaction('photos','readwrite');tx.objectStore('photos').delete(id);tx.oncomplete=res;tx.onerror=()=>rej(tx.error)});renderPhotoPreview(code);refreshVisiblePhotoCounts()}
-async function renderPhotoPreview(code){
- const el=document.getElementById('photo-preview-'+code);if(!el)return;
- const photos=await getEvidencePhotos(code);
- el.innerHTML=photos.map(p=>`<figure class="photo-thumb"><img src="${URL.createObjectURL(p.blob)}" alt="Evidencia ${esc(code)}"><button class="danger" title="Eliminar fotografía" onclick="deleteEvidencePhoto('${p.id}','${code}')">×</button>${p.caption?`<figcaption>${esc(p.caption)}</figcaption>`:''}</figure>`).join('');
-}
+async function renderPhotoPreview(code){const el=document.getElementById('photo-preview-'+code);if(!el)return;const photos=await getEvidencePhotos(code);el.innerHTML=photos.map(p=>`<div class="photo-thumb"><img src="${URL.createObjectURL(p.blob)}"><button class="danger" onclick="deleteEvidencePhoto('${p.id}','${code}')">×</button></div>`).join('')}
 async function refreshVisiblePhotoCounts(){document.querySelectorAll('[id^="photo-count-"]').forEach(async el=>{const code=el.id.replace('photo-count-',''),ps=await getEvidencePhotos(code);el.textContent=ps.length;renderPhotoPreview(code)})}
 async function openEvidenceGallery(code){const ps=await getEvidencePhotos(code);if(!ps.length)return alert('No hay fotografías asociadas a este desvío.');renderPhotoPreview(code);document.getElementById('photo-preview-'+code)?.scrollIntoView({behavior:'smooth',block:'center'})}
-async function prepareReportWithPhotos(){
- renderReport();const ds=deviations();const blocks=[];
- for(const i of ds){
-  const ps=await getEvidencePhotos(i.code);
-  if(ps.length){
-   blocks.push(`<section class="report-section photo-report"><h1>EVIDENCIA FOTOGRÁFICA · ${esc(i.code)}</h1><p><b>${esc(i.service)}:</b> ${esc(i.item)}</p><div class="report-photo-grid">${ps.map((p,n)=>`<figure><img src="${URL.createObjectURL(p.blob)}"><figcaption><b>Fotografía ${n+1}</b>${p.caption?` · ${esc(p.caption)}`:''}<br>${new Date(p.createdAt).toLocaleString()} · Auditor: ${esc(p.auditor||state.meta.auditor||'No consignado')} · Prestador: ${esc(p.prestador||state.meta.prestador||'No consignado')}</figcaption></figure>`).join('')}</div></section>`);
-  }
- }
- document.getElementById('reportContent').insertAdjacentHTML('beforeend',blocks.join(''));
- alert(blocks.length?'Informe preparado con fotografías.':'No hay fotografías cargadas en los desvíos.');
-}
+async function prepareReportWithPhotos(){renderReport();const ds=deviations();const blocks=[];for(const i of ds){const ps=await getEvidencePhotos(i.code);if(ps.length){blocks.push(`<section class="report-section photo-report"><h1>EVIDENCIA FOTOGRÁFICA · ${esc(i.code)}</h1><p><b>${esc(i.service)}:</b> ${esc(i.item)}</p><div class="report-photo-grid">${ps.map((p,n)=>`<figure><img src="${URL.createObjectURL(p.blob)}"><figcaption>Fotografía ${n+1} · ${new Date(p.createdAt).toLocaleString()}</figcaption></figure>`).join('')}</div></section>`)}}document.getElementById('reportContent').insertAdjacentHTML('beforeend',blocks.join(''));alert(blocks.length?'Informe preparado con fotografías.':'No hay fotografías cargadas en los desvíos.')}
 
 function auditShareText(){return `SIAPE · Informe ${reportId()}\nPrestador: ${state.meta.prestador||'Sin identificar'}\nFecha: ${state.meta.date||''}\nAuditor: ${state.meta.auditor||''}\nDesvíos: ${stats().dev}\nRiesgo: ${riskOverall()}`}
 function downloadCurrentHTML(){renderReport();const blob=new Blob([`<!doctype html><meta charset="utf-8"><title>SIAPE ${reportId()}</title><link rel="stylesheet" href="styles.css">${document.getElementById('reportContent').innerHTML}`],{type:'text/html'});const a=document.createElement('a');a.href=URL.createObjectURL(blob);a.download=`SIAPE_${reportId().replace('/','_')}.html`;a.click();return blob}

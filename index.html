@@ -1,40 +1,44 @@
 <!doctype html><html lang="es"><head><meta charset="utf-8"><meta name="viewport" content="width=device-width,initial-scale=1"><meta name="theme-color" content="#123d5a"><title>SIAPE V3 · Auditoría Inteligente</title><link rel="manifest" href="manifest.json"><link rel="stylesheet" href="styles.css"></head><body>
-<div id="introSplash" class="intro-splash" aria-hidden="true">
-  <div class="intro-content">
-    <img src="pami-logo.png" alt="PAMI INSSJP" class="intro-logo">
-    <div class="intro-title">SIAPE V3</div>
-    <div class="intro-subtitle">Plataforma Inteligente de Auditoría Prestacional</div>
-  </div>
-</div>
 <div id="authGate" class="auth-gate">
-  <div class="auth-watermark" aria-hidden="true"><img src="pami-logo.png" alt=""></div>
-  <div class="auth-card">
-    <img src="pami-logo.png" alt="PAMI INSSJP" class="auth-logo">
+  <div id="loginIntro" class="login-intro" aria-hidden="true">
+    <img src="pami-logo.png" alt="">
+    <strong>SIAPE V3</strong>
+    <span>Plataforma Inteligente de Auditoría Prestacional</span>
+  </div>
+  <div id="authCard" class="auth-card auth-card-hidden">
+    <img class="auth-logo" src="pami-logo.png" alt="PAMI INSSJP">
     <h1>SIAPE V3</h1>
-    <p class="auth-platform">Plataforma Inteligente de Auditoría Prestacional</p>
+    <p class="auth-subtitle">Plataforma Inteligente de Auditoría Prestacional</p>
     <p class="auth-area">Gerencia de Auditoría Prestacional</p>
     <div id="authConfigured" class="hide">
-      <label for="loginEmail">Correo electrónico</label><input id="loginEmail" type="email" autocomplete="username">
-      <label for="loginPassword">Contraseña</label><input id="loginPassword" type="password" autocomplete="current-password" onkeydown="if(event.key==='Enter')siapeLogin()">
+      <label>Correo electrónico</label><input id="loginEmail" type="email" autocomplete="username">
+      <label>Contraseña</label><input id="loginPassword" type="password" autocomplete="current-password">
       <button class="primary auth-main" onclick="siapeLogin()">Ingresar</button>
       <button class="secondary auth-main" onclick="siapeResetPassword()">Restablecer contraseña</button>
-      <div id="loginStatus" class="small auth-status" role="status"></div>
+      <button class="secondary auth-main" onclick="toggleAccessRequest()">Solicitar acceso</button>
+      <div id="accessRequestBox" class="access-request hide">
+        <h3>Solicitud de acceso</h3>
+        <label>Nombre</label><input id="requestFirstName" autocomplete="given-name">
+        <label>Apellido</label><input id="requestLastName" autocomplete="family-name">
+        <label>Correo electrónico</label><input id="requestEmail" type="email" autocomplete="email">
+        <label>Contraseña</label><input id="requestPassword" type="password" autocomplete="new-password">
+        <label>Confirmar contraseña</label><input id="requestPassword2" type="password" autocomplete="new-password">
+        <button class="primary auth-main" onclick="submitAccessRequest()">Enviar solicitud</button>
+        <button class="secondary auth-main" onclick="toggleAccessRequest(false)">Cancelar</button>
+      </div>
+      <div id="loginStatus" class="small login-status"></div>
     </div>
-    <div id="authSetup" class="notice hide"><b>Configuración pendiente.</b><br>Complete <code>firebase-config.js</code> con los datos del proyecto Firebase.</div>
-    <div id="localDemo" class="hide"><button class="secondary auth-main" onclick="enterLocalDemo()">Entrar en modo local de prueba</button><div class="small">Disponible solamente al abrir desde una PC local.</div></div>
-    <div class="auth-author">
-      <strong>Versión 3.2</strong><br>
-      Idea, diseño funcional y desarrollo<br>
-      <strong>Lic. Sergio Gabriel Rodríguez</strong><br>
-      Gerencia de Auditoría Prestacional
-    </div>
+    <div id="authSetup" class="notice hide"><b>Configuración pendiente.</b><br>Complete <code>firebase-config.js</code> con los datos de Firebase.</div>
+    <div id="localDemo" class="hide"><button class="secondary auth-main" onclick="enterLocalDemo()">Entrar en modo local de prueba</button></div>
+    <div class="auth-credit"><b>Versión 3.1.4</b><br>Idea, diseño funcional y desarrollo<br><strong>Lic. Sergio Gabriel Rodríguez</strong><br>Gerencia de Auditoría Prestacional</div>
   </div>
 </div>
+<div class="app-watermark" aria-hidden="true"><img src="pami-logo.png" alt=""></div>
 
 <header><div class="session-bar"><span id="sessionUser">Sin sesión</span><button class="session-btn" onclick="siapeLogout()">Cerrar sesión</button></div><h1>SIAPE · Sistema Integral de Auditoría Prestacional</h1><p>Informe institucional basado en modelo GAP · biblioteca normativa por servicio · PC y tablet</p><nav>
-<button class="navbtn active" onclick="showPage('startPage',this)">Inicio</button><button class="navbtn" onclick="showPage('userDashPage',this);renderUserDashboard()">Mi panel</button><button class="navbtn" onclick="showPage('auditPage',this)">Auditorías</button><button class="navbtn" onclick="showPage('interviewPage',this)">Entrevista y notas</button><button class="navbtn" onclick="showPage('rrhhPage',this)">RRHH Enfermería</button><button class="navbtn ai-nav" onclick="showPage('aiPage',this)">🧠 Motor IA</button><button class="navbtn" onclick="showPage('dashPage',this)">Panel general</button><button class="navbtn" onclick="showPage('summaryPage',this)">Resumen y acta</button><button class="navbtn" onclick="showPage('devPage',this)">Desvíos</button><button class="navbtn" onclick="showPage('planPage',this)">Plan de mejora</button><button class="navbtn" onclick="showPage('normPage',this)">Normativa</button><button class="navbtn" onclick="showPage('reportPage',this)">Informe PDF</button><button class="navbtn" onclick="showPage('settingsPage',this);renderV3Settings()">Configuración</button>
+<button class="navbtn active" onclick="showPage('startPage',this)">Inicio</button><button class="navbtn" onclick="showPage('userDashPage',this);renderUserDashboard()">Mi panel</button><button class="navbtn" onclick="showPage('auditPage',this)">Auditorías</button><button class="navbtn" onclick="showPage('interviewPage',this)">Entrevista y notas</button><button class="navbtn" onclick="showPage('rrhhPage',this)">RRHH Enfermería</button><button class="navbtn ai-nav" onclick="showPage('aiPage',this)">🧠 Motor IA</button><button class="navbtn" onclick="showPage('dashPage',this)">Panel general</button><button class="navbtn" onclick="showPage('summaryPage',this)">Resumen y acta</button><button class="navbtn" onclick="showPage('devPage',this)">Desvíos</button><button class="navbtn" onclick="showPage('planPage',this)">Plan de mejora</button><button class="navbtn" onclick="showPage('normPage',this)">Normativa</button><button class="navbtn" onclick="showPage('reportPage',this)">Informe PDF</button><button class="navbtn" onclick="showPage('settingsPage',this);renderV3Settings()">Configuración</button><button id="adminNav" class="navbtn hide" onclick="showPage('adminPage',this);loadAdminUsers()">Administración</button>
 </nav></header><main>
-<section id="startPage" class="page active start-watermarked"><div class="card"><h2>Identificación de la auditoría</h2><div class="grid">
+<section id="startPage" class="page active"><div class="card"><h2>Identificación de la auditoría</h2><div class="grid">
 <div><label>Número de informe</label><input data-meta="reportNumber" inputmode="numeric" placeholder="188"></div><div><label>Año del informe</label><input data-meta="reportYear" inputmode="numeric" placeholder="2026"></div><div><label>Prestador</label><input data-meta="prestador"></div><div><label>CUIT</label><input data-meta="cuit"></div><div><label>Provincia / jurisdicción</label><select data-meta="province"><option>CABA</option><option>Buenos Aires</option><option>Catamarca</option><option>Chaco</option><option>Chubut</option><option>Córdoba</option><option>Corrientes</option><option>Entre Ríos</option><option>Formosa</option><option>Jujuy</option><option>La Pampa</option><option>La Rioja</option><option>Mendoza</option><option>Misiones</option><option>Neuquén</option><option>Río Negro</option><option>Salta</option><option>San Juan</option><option>San Luis</option><option>Santa Cruz</option><option>Santa Fe</option><option>Santiago del Estero</option><option>Tierra del Fuego</option><option>Tucumán</option></select></div><div><label>Nivel PAMI</label><select data-meta="level"><option>I</option><option>II</option><option>III</option><option>IV</option></select></div>
 <div><label>Tipo de establecimiento</label><select data-meta="type"><option>Privado</option><option>Público</option><option>Mixto</option></select></div><div><label>Fecha</label><input type="date" data-meta="date"></div><div><label>Auditor</label><input data-meta="auditor"></div><div><label>Domicilio</label><input data-meta="address"></div></div></div>
 <div class="card"><h2>Áreas a auditar</h2><div class="grid"><label><input style="width:auto" type="checkbox" data-area="Enfermería"> Enfermería</label><label><input style="width:auto" type="checkbox" data-area="Esterilización"> Esterilización</label><label><input style="width:auto" type="checkbox" data-area="Hemodinamia"> Hemodinamia</label><label><input style="width:auto" type="checkbox" data-area="Limpieza"> Limpieza</label><label><input style="width:auto" type="checkbox" data-area="Lavadero"> Lavadero</label></div></div>
@@ -119,11 +123,6 @@
 
 <section id="userDashPage" class="page"><div class="card"><h2>Panel del auditor</h2><div id="userWelcome" class="welcome-user"></div><div id="userDashboardKpis" class="kpis"></div><div class="toolbar"><button class="primary" onclick="showPage('startPage',document.querySelectorAll('.navbtn')[0])">Nueva auditoría</button><button class="secondary" onclick="showPage('startPage',document.querySelectorAll('.navbtn')[0]);document.getElementById('savedAudits')?.scrollIntoView()">Mis auditorías</button><button class="secondary" onclick="showPage('aiPage',document.querySelector('.ai-nav'))">Motor IA</button></div></div></section>
 <section id="settingsPage" class="page"><div class="card"><h2>Configuración del auditor</h2><div class="grid"><div><label>Nombre y apellido</label><input id="profileName"></div><div><label>Matrícula / identificación</label><input id="profileLicense"></div><div><label>Institución</label><input id="profileInstitution"></div><div><label>Correo habitual</label><input id="profileEmail" type="email"></div></div><div class="toolbar"><button class="primary" onclick="saveV3Settings()">Guardar configuración local</button><button class="secondary" onclick="exportFullBackup()">Exportar respaldo completo</button><label class="secondary">Importar respaldo completo<input class="hide" type="file" accept=".json" onchange="importFullBackup(this)"></label></div><div class="notice">Los datos del perfil, auditorías y fotografías se conservan en este dispositivo. El servidor de autenticación recibe únicamente identidad y registro de acceso.</div></div></section>
+<section id="adminPage" class="page"><div class="card"><h2>Administración de usuarios</h2><p class="notice">Disponible para Administrador, Gerente, Subgerente y Jefaturas de los Departamentos de Médicas y Sociales.</p><div class="admin-toolbar"><input id="adminUserSearch" type="search" placeholder="Buscar por nombre o correo..." oninput="renderAdminUsers()"><select id="adminUserFilter" onchange="renderAdminUsers()"><option value="todos">Todos</option><option value="pendiente">Pendientes</option><option value="autorizado">Autorizados</option><option value="suspendido">Suspendidos</option><option value="rechazado">Rechazados</option></select><button class="secondary" onclick="loadAdminUsers()">Actualizar</button></div><div id="adminUserStatus" class="small"></div><div id="adminUsersList" class="admin-users"></div></div></section>
 <section id="reportPage" class="page"><div class="toolbar no-print"><button class="primary" onclick="prepareReportWithPhotos()">Preparar informe con fotografías</button><button class="primary" onclick="window.print()">Imprimir / Guardar como PDF</button><button class="secondary" onclick="shareCurrentReport()">Compartir informe</button></div><div id="reportContent"></div></section>
-</main><script src="https://www.gstatic.com/firebasejs/10.12.5/firebase-app-compat.js"></script><script src="https://www.gstatic.com/firebasejs/10.12.5/firebase-auth-compat.js"></script><script src="https://www.gstatic.com/firebasejs/10.12.5/firebase-firestore-compat.js"></script><script src="firebase-config.js?v=3.1.3"></script><script src="data.js?v=3.1.3"></script><script src="app.js?v=3.1.3"></script><script>
-if ('serviceWorker' in navigator && location.protocol.startsWith('http')) {
-  navigator.serviceWorker.getRegistrations().then(regs => Promise.all(regs.map(r => r.unregister()))).finally(() => {
-    navigator.serviceWorker.register('sw.js?v=3.1.3').then(reg => reg.update()).catch(console.error);
-  });
-}
-</script></body></html>
+</main><script src="https://www.gstatic.com/firebasejs/10.12.5/firebase-app-compat.js"></script><script src="https://www.gstatic.com/firebasejs/10.12.5/firebase-auth-compat.js"></script><script src="https://www.gstatic.com/firebasejs/10.12.5/firebase-firestore-compat.js"></script><script src="firebase-config.js"></script><script src="data.js"></script><script src="app.js"></script><script>if('serviceWorker'in navigator&&location.protocol.startsWith('http'))navigator.serviceWorker.register('sw.js');</script></body></html>

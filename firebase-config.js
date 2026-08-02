@@ -1,4 +1,4 @@
-// Configuración pública de la aplicación web SIAPE V3 en Firebase.
+// Configuración pública de Firebase para SIAPE V3.
 // No contiene contraseñas. Firebase Authentication valida cada cuenta.
 window.SIAPE_FIREBASE_CONFIG = {
   apiKey: "AIzaSyBjdEnzy0w_XA-Gg5KPeZekOJYuUKj12GY",
